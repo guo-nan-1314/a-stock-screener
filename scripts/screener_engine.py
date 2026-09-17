@@ -19,10 +19,10 @@ class ScreenerEngine:
     """选股引擎"""
 
     DEFAULT_RISK = {
-        "min_amount": 2000_0000,    # 最低成交额 2000 万
-        "min_mv": 30_0000_0000,     # 最低市值 30 亿
-        "max_pe": 300,              # PE 上限
-        "min_pe": -1000,            # PE 下限（允许亏损股）
+        "min_amount": 2000_0000,
+        "min_mv": 30_0000_0000,
+        "max_pe": 300,
+        "min_pe": -1000,
     }
 
     def __init__(self, cache_dir=None):
@@ -30,7 +30,8 @@ class ScreenerEngine:
         self.calc = FactorCalculator()
 
     def run(self, top_n=20, exclude_st=True, exclude_kcb=True,
-            exclude_bse=True, risk=None, weights=None, output_json=False):
+            exclude_bse=True, risk=None, weights=None, output_json=False,
+            neutralize_mc=False, neutralize_ind=False):
         risk = {**self.DEFAULT_RISK, **(risk or {})}
 
         print("[1/5] 获取全市场行情数据...")
@@ -70,6 +71,20 @@ class ScreenerEngine:
 
         print("[3/5] 计算因子与综合评分...")
         factors = self.calc.compute_all_factors(filtered)
+
+        if neutralize_mc or neutralize_ind:
+            modes = []
+            if neutralize_mc:
+                modes.append("市值")
+            if neutralize_ind:
+                modes.append("行业")
+            print(f"  因子中性化: {'+'.join(modes)}")
+            factors = self.calc.neutralize_all(
+                factors, filtered,
+                market_cap=neutralize_mc,
+                industry=neutralize_ind,
+            )
+
         scores = self.calc.compute_composite_score(factors, weights)
 
         for i, s in enumerate(filtered):
@@ -123,10 +138,13 @@ if __name__ == "__main__":
     parser.add_argument("--cache-dir", type=str, default=None)
     parser.add_argument("--min-amount", type=float, default=2000_0000)
     parser.add_argument("--min-mv", type=float, default=30_0000_0000)
+    parser.add_argument("--neutralize-mc", action="store_true", help="市值中性化")
+    parser.add_argument("--neutralize-ind", action="store_true", help="行业中性化")
     args = parser.parse_args()
 
     engine = ScreenerEngine(cache_dir=args.cache_dir)
     risk = dict(ScreenerEngine.DEFAULT_RISK)
     risk["min_amount"] = args.min_amount
     risk["min_mv"] = args.min_mv
-    engine.run(top_n=args.top, output_json=args.json, risk=risk)
+    engine.run(top_n=args.top, output_json=args.json, risk=risk,
+               neutralize_mc=args.neutralize_mc, neutralize_ind=args.neutralize_ind)
